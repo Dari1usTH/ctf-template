@@ -1,0 +1,34 @@
+/* Palette: white, near-black, blue. No framework or decorative assets. */
+:root { color-scheme: light; font: 16px/1.5 system-ui, sans-serif; color: #17212b; background: #fff; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+header, main { padding: 1rem; max-width: 1200px; margin: auto; }
+header { display: flex; gap: 1rem; align-items: center; border-bottom: 1px solid #17212b; }
+header span { flex: 1; }
+h1 { font-size: 1.6rem; } h2 { font-size: 1.2rem; } h3 { font-size: 1.05rem; }
+button, input, select { font: inherit; color: inherit; background: #fff; border: 1px solid #17212b; border-radius: 3px; padding: .45rem .7rem; }
+button { cursor: pointer; } button:hover, button[aria-pressed="true"], .primary { color: #fff; background: #165ac7; border-color: #165ac7; }
+button:disabled { cursor: wait; border-style: dashed; }
+:focus-visible { outline: 3px solid #165ac7; outline-offset: 3px; }
+a { color: #165ac7; } code, pre { overflow-wrap: anywhere; } pre { white-space: pre-wrap; }
+nav, .bar { display: flex; gap: .7rem; flex-wrap: wrap; align-items: center; margin: 1rem 0; }
+.bar h1, .bar h2, .bar h3 { flex: 1; margin: 0; }
+nav { padding-bottom: 1rem; border-bottom: 1px solid #17212b; }
+label { display: inline-flex; align-items: center; gap: .5rem; }
+input[type="checkbox"] { width: 1.1rem; height: 1.1rem; accent-color: #165ac7; }
+#notice, .card, #plan { border: 1px solid #17212b; padding: 1rem; margin: 1rem 0; border-radius: 3px; }
+#notice { border: 2px solid #165ac7; } #notice[data-error="true"] { border-style: dashed; }
+summary { cursor: pointer; overflow-wrap: anywhere; }
+.files { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+th, td { border-bottom: 1px solid #17212b; text-align: left; padding: .4rem; vertical-align: top; overflow-wrap: anywhere; }
+.files td:first-child { width: 65%; } th small { display: block; font-weight: normal; }
+.table-scroll { overflow-x: auto; }
+small { font-size: .875rem; } .issue { border-left: 3px solid #165ac7; padding-left: .7rem; }
+.tree { max-height: 24rem; overflow: auto; }
+.checksum { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; margin: .4rem 0; } .checksum code { word-break: break-all; }
+dialog { color: #17212b; background: #fff; border: 2px solid #17212b; border-radius: 3px; width: min(95vw, 1000px); max-height: 90vh; overflow: auto; }
+[hidden] { display: none !important; }
+@media (max-width: 600px) { header span { display: none; } main { padding: .75rem; } .files td:first-child { width: auto; } button { min-height: 44px; } input[type="search"] { max-width: 13rem; } }
+
+/* Requested checksum failure indicator; existing layout and palette are unchanged. */
+.archive-invalid { color: #b00020; border-color: #b00020; }

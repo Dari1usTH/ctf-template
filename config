@@ -2,3 +2,5 @@
 
 categories="crypto exploit misc reverse web sample"
 tar_mtime="2016-09-01"
+# Expected prefix, without braces; used only by CTF Author validation.
+flag_prefix="OWASPCTF"

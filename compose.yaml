@@ -1,0 +1,24 @@
+services:
+  author:
+    build:
+      context: .
+    init: true
+    restart: unless-stopped
+    user: "${CTF_UID:-1000}:${CTF_GID:-1000}"
+    ports:
+      - "${CTF_BIND:-0.0.0.0}:${CTF_PORT:-8080}:8080"
+    environment:
+      TZ: "${CTF_TIMEZONE:-Europe/Bucharest}"
+      CTF_WORKSPACE: /workspace
+    volumes:
+      - type: bind
+        source: "${CTF_WORKSPACE:-.}"
+        target: /workspace
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=256m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 20s
