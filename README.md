@@ -1,3 +1,115 @@
+# CTF Author — V1
+
+Interfață web locală pentru autorii de challenge-uri CTF. Arhivarea se execută în Bash; serverul și interfața sunt JavaScript, fără dependențe npm. Interfața este în engleză, cu texte scurte. CSS-ul folosește doar alb, negru-albăstrui și albastru.
+
+## Pornire prin Docker
+
+Ai nevoie de Docker Engine / Docker Desktop pornit și Docker Compose v2. Nu trebuie să instalezi Node pe calculatorul autorului.
+
+Din rădăcina acestui proiect:
+
+```bash
+./run.sh
+```
+
+Dacă există deja o instanță CTF Author (pornită sau oprită), scriptul întreabă dacă vrei repornirea ei. La `y` / `yes` / `da` oprește doar containerele acestei aplicații și recreează platforma; la Enter sau `n` păstrează instanța existentă. `./run.sh --yes` confirmă automat repornirea. Arhivele, jurnalul și tokenul se păstrează.
+
+Scriptul construiește imaginea, pornește containerul, așteaptă healthcheck-ul și afișează adresa locală, adresele LAN candidate și tokenul de conectare. Deschide `http://localhost:8080` sau `http://<IP-ul-autorului>:8080` pe un dispozitiv din aceeași rețea. Portul trebuie să fie accesibil prin firewall-ul calculatorului autorului. Tokenul se păstrează în `.ctf-author/access-token` și rămâne valabil la repornire. Sesiunile web expiră după 12 ore și la repornirea serverului.
+
+Opțiuni de pornire:
+
+```bash
+CTF_PORT=8090 ./run.sh
+CTF_BIND=127.0.0.1 ./run.sh          # acces doar de pe calculatorul autorului
+CTF_TIMEZONE=Europe/Bucharest ./run.sh
+```
+
+Implicit se montează directorul curent. Poți seta `CTF_WORKSPACE=/cale/absoluta/proiect` dacă acesta conține `config`, `pack-public`, `pack-private` și `util/pack-common` din versiunea curentă. Fișierele sunt scrise cu UID/GID-ul utilizatorului care rulează scriptul. Pentru un Docker Engine local pe Linux aceasta păstrează proprietarul fișierelor; Docker Desktop gestionează permisiunile prin propriul bind mount.
+
+Oprire și verificare:
+
+```bash
+docker compose --project-name ctf-author down
+docker compose --project-name ctf-author ps
+docker compose --project-name ctf-author logs --tail=100
+```
+
+Dacă ai pornit din alt director, adaugă `-f /cale/ctf-template/compose.yaml`. Oprirea nu șterge arhivele, jurnalul sau coșul. Aplicația este destinată unei rețele LAN de încredere; nu publică automat nimic pe internet.
+
+## Fluxul de lucru
+
+1. Pregătește challenge-urile în structura `categorie/challenge/`, apoi rulează separat buildurile necesare (`./make-src`, `./public-src`, opțional `./private-src`). Interfața nu execută Makefile-uri.
+2. Deschide „Challenges”. Categoriile sunt citite din `config`; subdirectoarele lor sunt challenge-uri. Selectează challenge-urile dorite. La fiecare, fișierele din `public/` sunt bifate pentru arhiva publică, iar cele din `private/` pentru cea privată. Selecția challenge-urilor pornește goală.
+3. Extinde lista de fișiere pentru a include/exclude fișiere individuale. Fișierele suplimentare se aleg din interiorul challenge-ului. Soluțiile și sursele pot fi incluse în arhiva privată.
+4. Apasă „Review package”. Vezi erorile, avertismentele, arborele rezultat, dimensiunile și comenzile `pack-public` / `pack-private` care urmează să ruleze. Acest pas nu execută scripturi de build sau arhivare și nu modifică sursele.
+5. Rezolvă erorile și repetă verificarea. Erorile de validare și scurgerile blochează arhivarea; avertismentele din README permit continuarea. Apasă „Create archives” după verificarea previzualizării.
+6. Din „Archives” poți descărca, copia checksum-uri, inspecta conținutul și compara cu cea mai recentă arhivă precedentă pentru același challenge și aceeași vizibilitate. Pe HTTP în LAN, dacă browserul blochează clipboard-ul automat, butonul selectează checksum-ul pentru copiere cu Ctrl+C / Cmd+C.
+7. Șterge o arhivă, directorul `public/` sau `private/`, ori întregul lot. Datele sunt mutate în coș, nu șterse definitiv. „History & undo” restaurează ștergerile sau anulează crearea unui lot. Dacă ai șters și părintele unui fișier, restaurează mai întâi părintele. Destinațiile existente nu sunt suprascrise.
+
+Rescanarea resetează selecția. Previzualizările sunt valabile 15 minute, doar până la prima utilizare, și se invalidează dacă se schimbă conținutul selectat, permisiunile de execuție, flag-urile relevante, configurația sau scripturile. După repornire trebuie refăcute.
+
+## Rezultate
+
+```text
+Challenges/
+  2026-11-21/
+    public/
+      piece_of_pie_<md5>.tar
+    private/
+      # Arhivele private, dacă au fost selectate fișiere
+    manifest.json
+    checksums.txt
+.ctf-author/
+  access-token
+  events.jsonl
+  operations/         # Jurnalul persistent pentru undo și recuperare
+  trash/              # Rezultate mutate în coș
+  build/              # Pregătire temporară, în afara rezultatelor publicate
+```
+
+La o nouă arhivare în aceeași zi, numele lotului devine `<data>_<ora-UTC>_<id-scurt>` pentru a păstra rezultatele anterioare. Ziua se calculează în fusul `CTF_TIMEZONE`, implicit `Europe/Bucharest`. Fiecare lot conține ambele directoare, inclusiv când unul rămâne gol.
+
+În `.tar`, conținutul implicit al `public/` sau `private/` apare sub `<challenge>/`, ca în template-ul inițial. Fișierele suplimentare își păstrează calea relativă: `README.md` devine `<challenge>/README.md`, iar `src/foo.c` devine `<challenge>/src/foo.c`. Coliziunile între căi sunt respinse. Challenge-urile cu același nume din categorii diferite se arhivează în loturi distincte.
+
+Timestamp-ul, proprietarul (0:0), ordinea fișierelor și permisiunile sunt normalizate: directoare și executabile `0755`, restul `0644`. Același conținut, aceleași nume și aceiași biți de execuție produc aceleași arhive folosind imaginea curentă. Numele ambelor tipuri este `<challenge>_<md5>.tar`; vizibilitatea este dată de director. Checksum-urile pot diferi față de versiunea veche a scripturilor, care nu normaliza toate metadatele.
+
+Manifestul și `checksums.txt` sunt înregistrările inițiale ale lotului. Dacă ștergi o arhivă, aceasta apare indisponibilă în UI; metadatele istorice se păstrează pentru undo. Jurnalul complet este `.ctf-author/events.jsonl`, iar interfața afișează ultimele 300 de evenimente. Coșul nu se golește automat. Directoarele rămase în `build/` după o întrerupere sunt ignorate și pot fi curățate manual cu aplicația oprită.
+
+## Validare și scanare
+
+`config` păstrează formatul Bash al template-ului; interfața citește numai atribuiri literale și nu îl execută:
+
+```bash
+categories="crypto exploit misc reverse web sample"
+tar_mtime="2016-09-01"
+flag_prefix="OWASPCTF"
+```
+
+Validatorul verifică `README.md`, un `flag` nevid, directoarele `src/`, `sol/`, `public/`, `src/Makefile` cu țintele `clean` și `public`, precum și o soluție nevidă în orice format. Secțiunile README (descriere, vulnerabilitate, soluție, mediu, deploy) sunt avertismente. Prefixul și flag-urile duplicate sunt verificate între toate challenge-urile scanate. Eliminarea lui `flag_prefix` dezactivează verificarea de prefix și generează un avertisment.
+
+Scanarea selecției publice detectează:
+
+- flag-uri exacte din toate challenge-urile, inclusiv în fișiere binare;
+- `sol/`, `.git`, `.env` și variante, `flag`, `__pycache__`, fișiere Python compilate și backup-uri uzuale de editor;
+- fișiere selectate din `private/` și copii identice, ne-goale, ale fișierelor private din același challenge.
+
+Scanarea nu decomprimă arhive imbricate și nu identifică secrete codificate, transformate sau fragmente arbitrare de conținut privat. Symlink-urile și fișierele speciale nu pot fi incluse; `.git/` nu este traversat. Nu se execută automat soluții sau Makefile-uri. Smoke-testul și exportul CTFd JSON/CSV sunt amânate.
+
+## Dezvoltare și teste
+
+Cu Node.js 22+, Bash, GNU tar și coreutils instalate:
+
+```bash
+npm test
+npm start
+```
+
+Nu există dependențe npm de instalat. `npm start` folosește proiectul curent și creează tokenul dacă lipsește; citește-l local din `.ctf-author/access-token`. Documentația API, manifestului și jurnalului este în [app/ARCHITECTURE.md](app/ARCHITECTURE.md).
+
+---
+
+# Documentația template-ului inițial
+
 # CTF Name
 
 The CTF (Capture the Flag) Template (TODO: Name) contest takes place on (TODO: date).

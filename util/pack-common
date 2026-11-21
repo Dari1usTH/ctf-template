@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# Shared implementation for pack-public and pack-private; requires GNU tar.
+set -Eeuo pipefail
+export LC_ALL=C TZ=UTC
+unset TAR_OPTIONS
+kind=$1
+shift
+work=$(mktemp -d)
+trap 'rm -rf -- "$work"' EXIT
+
+pack_prepared() {
+    local prepared=$1 output=$2 name=$3 timestamp=$4
+    [[ -d "$prepared/$name" && "$name" != */* && "$name" != . && "$name" != .. ]] || { echo 'Invalid prepared archive' >&2; return 1; }
+    mkdir -p -- "$output"
+    tar --sort=name --format=gnu --mtime="$timestamp" --owner=0 --group=0 --numeric-owner \
+        --mode='u+rwX,go+rX,go-w' -C "$prepared" -cf "$work/archive.tar" -- "$name"
+    local checksum destination
+    checksum=$(md5sum -- "$work/archive.tar")
+    checksum=${checksum%% *}
+    destination="$output/${name}_${checksum}.tar"
+    if [[ -e "$destination" ]]; then
+        cmp -s -- "$work/archive.tar" "$destination" || { echo 'Archive name collision' >&2; return 1; }
+    else
+        mv -- "$work/archive.tar" "$destination"
+    fi
+    printf '%s\n' "$destination"
+}
+
+if [[ ${1:-} == --prepared ]]; then
+    [[ $# == 5 ]] || { echo 'Usage: pack-KIND --prepared STAGING OUTPUT NAME MTIME' >&2; exit 1; }
+    pack_prepared "$2" "$3" "$4" "$5"
+    exit
+fi
+
+# Compatibility mode: invoked from repository root, with zero or more challenges.
+source ./config
+pack_challenge() {
+    local challenge=$1 name
+    [[ -d "$challenge/$kind" ]] || return 0
+    name=$(basename -- "$challenge")
+    printf 'Packing %s for %s ...\n' "$kind" "$challenge"
+    mkdir -p -- "$work/input/$name"
+    cp -a -- "$challenge/$kind/." "$work/input/$name/"
+    pack_prepared "$work/input" "$PWD" "$name" "$tar_mtime"
+    rm -rf -- "$work/input"
+}
+if (( $# )); then
+    for challenge in "$@"; do pack_challenge "$challenge"; done
+else
+    for category in $categories; do
+        for challenge in "$category"/*; do
+            [[ -d "$challenge" ]] || continue
+            pack_challenge "$challenge"
+        done
+    done
+fi
