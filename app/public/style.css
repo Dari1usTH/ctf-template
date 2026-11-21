@@ -29,3 +29,6 @@ small { font-size: .875rem; } .issue { border-left: 3px solid #165ac7; padding-l
 dialog { color: #17212b; background: #fff; border: 2px solid #17212b; border-radius: 3px; width: min(95vw, 1000px); max-height: 90vh; overflow: auto; }
 [hidden] { display: none !important; }
 @media (max-width: 600px) { header span { display: none; } main { padding: .75rem; } .files td:first-child { width: auto; } button { min-height: 44px; } input[type="search"] { max-width: 13rem; } }
+
+/* Requested checksum failure indicator; existing layout and palette are unchanged. */
+.archive-invalid { color: #b00020; border-color: #b00020; }

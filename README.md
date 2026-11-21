@@ -185,3 +185,21 @@ There are similar scripts to automate other actions. They are invoked similar to
 Deploying a challenge usually requires a virtual machine where to deploy it. We will use virtual machines in the [NCIT Cluster in UPB](http://curs.pub.ro/index.php/projects/projects-cursuri-upb/17-general/general/13-ncit-cluster-homepage) and the [xinetd-based approach](https://github.com/pwning/docs/blob/master/suggestions-for-running-a-ctf.markdown#remote) for deploying challenge binaries and flags. The `utils/` subfolder contains helpful scripts for setting up and using the infrastructure.
 
 For flags we use the `TODO_CTF` prefix followed by a random string in curly brackets, e.g. `TODO_CTF{jumping_Jehoshaphat}`. Unless otherwise stated, we place flag files in `/home/ctf/flag` on the remote system.
+
+## Import, checksum checks and setup
+
+```bash
+./install.sh         # Debian/Ubuntu: host dependencies and application image
+./install.sh --check # Check host dependencies only
+./run.sh
+./stop.sh            # Stop this application; keep workspace data
+```
+
+`requirements.txt` is the apt package manifest read by `install.sh`, not a pip requirements file. Docker packages already installed are reused. Other systems need Docker Desktop and Compose v2. Node.js 22 and Python 3 are installed inside the image; no npm or pip packages are needed. Local development and tests additionally need Node.js 22+, Python 3, Bash, GNU tar and coreutils.
+
+- **Import**: choose a folder or ZIP/TAR archive (including gzip/bzip2/xz-compressed TAR), a category from `config`, and a new name. Files are uploaded to temporary staging, then shown for review. **Import** confirms; **Cancel** removes staging. Categories and challenge folders are published only after confirmation. Existing challenges are never overwritten. Missing `public/`, `src/` and `sol/` folders are included in the preview. Validation issues are shown but do not prevent importing an incomplete challenge.
+- **Delete challenge** moves the source folder to trash. **History & undo** can restore it or undo an import, including after restart. Existing generated archives are kept. Undo refuses to move a replacement folder that reuses an old name.
+- Selecting a challenge opens its file list. An empty private selection produces no private archive; the batch may still contain an empty `private/` directory.
+- **Check** on each archive batch recalculates both MD5 and SHA256 against its original manifest. Missing, unreadable or modified archives are marked red. Results and their check time persist after restart; press **Check** again after changing or restoring files.
+
+Imports accept up to 10,000 archive entries and 1 GiB expanded data, with uploads limited to 256 MiB per file and ten pending imports. Links, traversal paths, special files, encrypted ZIP entries and conflicting paths are rejected. Staging expires after one hour; expired imports are removed when the next import starts. Archive executable permissions are preserved and normalized. Browser folder uploads do not expose Unix modes; shebang scripts and ELF binaries are marked executable. Use TAR when exact executable-file selection matters. Importing never executes uploaded scripts or Makefiles.

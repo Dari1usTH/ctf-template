@@ -87,3 +87,19 @@ Manifestul nu conține valorile flag-urilor. Poate include nume și căi de fiș
 Operația este scrisă atomic înainte de mutare și actualizată după mutare. La pornire, o operație `pending` este reconciliată: sursă absentă și destinație prezentă înseamnă `done`; sursă prezentă și destinație absentă înseamnă `failed`; alte combinații devin `conflict`. Undo-urile finalizate sunt reconciliate cu operațiile lor părinte. Recuperarea vizează întreruperea procesului, nu garanții împotriva defectării discului sau a pierderii alimentării fără fsync.
 
 Ștergerile mută în `.ctf-author/trash/<uuid>/item`; undo mută înapoi, dacă părintele există și destinația este liberă. Anularea creării mută lotul în coș. Nu există redo sau golire automată a coșului. `manifest.json` și `checksums.txt` se șterg numai odată cu lotul pentru a păstra informațiile de inspecție și recuperare.
+
+## Import and checksum endpoints
+
+| Method | Route | Request / result |
+| --- | --- | --- |
+| POST | `/api/import/start` | `{kind:"folder"|"archive",category,name}` → `{token}` |
+| POST | `/api/import/upload?token=...&path=...` | Binary body (`application/octet-stream`), same session/origin/header checks; 256 MiB/file |
+| POST | `/api/import/review` | `{token}` → target, file tree, issues and staging fingerprint |
+| POST | `/api/import/confirm` | `{token}` → durable `import` operation; publishes reviewed staging |
+| POST | `/api/import/cancel` | `{token}` → removes temporary import |
+| POST | `/api/challenge/delete` | `{id:"category/name"}` → durable `challenge-delete` operation |
+| POST | `/api/check` | `{folder}` → MD5/SHA256/size verification for every archive in the manifest |
+
+`imports.mjs` stages uploads in `.ctf-author/imports/<token>/`. Archive extraction runs `scripts/extract.sh` and the Python standard-library extractor. All headers are validated before extraction, only regular files/directories are accepted, byte/entry limits are enforced, and extracted file bytes are checked before confirmation. A durable rename publishes the imported directory only after user confirmation. Import/delete/confirm/undo/check operations share the workspace lock. Source mutations clear package previews.
+
+Undo supports `import` and `challenge-delete`. New move operations record the source device/inode so undo cannot move a different item that later reused the same path. Check reports are stored in `.ctf-author/checks/<folder>.json` and matched to the manifest batch ID. The report represents its recorded check time; it is refreshed by the user with Check.

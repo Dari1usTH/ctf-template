@@ -48,15 +48,16 @@ function renderChallenges() {
     const heading = el('div', undefined, 'bar');
     const label = el('label');
     const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = selection.enabled;
-    checkbox.addEventListener('change', () => { selection.enabled = checkbox.checked; invalidate(); });
+    checkbox.addEventListener('change', () => { selection.enabled = checkbox.checked; details.open = checkbox.checked; invalidate(); });
     label.append(checkbox, el('strong', challenge.id)); heading.append(label);
     const errors = challenge.issues.filter(i => i.severity === 'error').length;
     heading.append(el('span', errors ? `${errors} validation errors` : challenge.issues.length ? `${challenge.issues.length} warnings` : 'Validation OK'));
+    heading.append(button('Delete challenge', () => deleteChallenge(challenge.id)));
     card.append(heading);
     if (challenge.issues.length) {
       const details = el('details'); details.append(el('summary', 'Validation details'), issueList(challenge.issues)); card.append(details);
     }
-    const details = el('details');
+    const details = el('details'); details.open = selection.enabled;
     details.append(el('summary', `${challenge.files.filter(f => f.type === 'file').length} files · choose public/private contents`));
     const actions = el('div', undefined, 'bar');
     actions.append(button('Reset defaults', () => { selection.public = new Set(challenge.defaults.public); selection.private = new Set(challenge.defaults.private); invalidate(); renderChallenges(); }), button('Clear files', () => { selection.public.clear(); selection.private.clear(); invalidate(); renderChallenges(); }));
@@ -85,6 +86,7 @@ async function loadChallenges() {
   const data = await api('challenges');
   challenges = data.challenges; selections = new Map(challenges.map(c => [c.id, { enabled: false, public: new Set(c.defaults.public), private: new Set(c.defaults.private) }]));
   $('#category').replaceChildren(new Option('All', ''), ...data.config.categories.map(c => new Option(c, c)));
+  $('#import-category').replaceChildren(...data.config.categories.map(c => new Option(c, c)));
   $('#config-info').textContent = `Archive timestamp: ${data.config.tarMtime} (UTC) · Flag prefix: ${data.config.flagPrefix || 'not set'}`;
   invalidate(); renderChallenges();
 }
@@ -97,7 +99,7 @@ function tree(files) {
     parts.forEach((name, index) => {
       if (!branch.has(name)) branch.set(name, { children: new Map() });
       const node = branch.get(name);
-      if (index === parts.length - 1) node.size = file.size;
+      if (index === parts.length - 1 && file.type !== 'directory') node.size = file.size;
       branch = node.children;
     });
   }
@@ -157,11 +159,19 @@ function checksum(label, value) {
   }));
   return row;
 }
-async function confirmDelete(relative) {
-  $('#confirm-text').textContent = `Move Challenges/${relative} to trash?`;
+async function askTrash(relative) {
+  $('#confirm-text').textContent = `Move ${relative} to trash?`;
   const dialog = $('#confirm-dialog');
   const accepted = await new Promise(resolve => { dialog.addEventListener('close', () => resolve(dialog.returnValue === 'delete'), { once: true }); dialog.showModal(); });
-  if (!accepted) return;
+  return accepted;
+}
+async function deleteChallenge(id) {
+  if (!await askTrash(id)) return;
+  await api('challenge/delete', { id });
+  await loadChallenges(); notify(`Moved to trash: ${id}. Undo is available in History.`);
+}
+async function confirmDelete(relative) {
+  if (!await askTrash(`Challenges/${relative}`)) return;
   await api('delete', { path: relative }); notify(`Moved to trash: ${relative}. Undo is available in History.`); await loadBatches();
 }
 async function inspect(relative) {
@@ -180,7 +190,11 @@ async function loadBatches() {
   if (!batches.length) target.append(el('p', 'No archives yet.'));
   for (const batch of batches) {
     const card = el('article', undefined, 'card'), bar = el('div', undefined, 'bar');
-    bar.append(el('h2', batch.folder), button('Delete batch', () => confirmDelete(batch.folder))); card.append(bar, el('p', date(batch.createdAt)));
+    bar.append(el('h2', batch.folder), button('Check', async () => {
+      const report = await api('check', { folder: batch.folder });
+      await loadBatches(); notify(report.ok ? 'Checksums OK.' : 'Checksum check failed.', !report.ok);
+    }), button('Delete batch', () => confirmDelete(batch.folder))); card.append(bar, el('p', date(batch.createdAt)));
+    if (batch.check) card.append(el('p', `${batch.check.ok ? 'OK' : 'Failed'} · ${date(batch.check.checkedAt)}`));
     const links = el('div', undefined, 'bar');
     for (const name of ['manifest.json', 'checksums.txt']) if (batch.files.some(f => f.path === name)) links.append(download(`${batch.folder}/${name}`, name));
     card.append(links);
@@ -189,7 +203,13 @@ async function loadBatches() {
       if (batch.files.some(f => f.path === kind)) title.append(button(`Delete ${kind}/`, () => confirmDelete(`${batch.folder}/${kind}`)));
       section.append(title);
       for (const archive of batch.archives.filter(a => a.kind === kind)) {
-        const item = el('div', undefined, 'card'); item.append(el('strong', `${archive.challenge} · ${bytes(archive.size)}${archive.missing ? ' · deleted / unavailable' : ''}`));
+        const item = el('div', undefined, 'card');
+        const checked = batch.check?.archives.find(a => a.path === archive.path);
+        if (checked) {
+          if (!checked.ok) item.classList.add('archive-invalid');
+          item.append(el('p', checked.status));
+        }
+        item.append(el('strong', `${archive.challenge} · ${bytes(archive.size)}${archive.missing ? ' · deleted / unavailable' : ''}`));
         if (!archive.missing) {
           const actions = el('div', undefined, 'bar'); const relative = `${batch.folder}/${archive.path}`;
           actions.append(download(relative, 'Download .tar'), button('Inspect & compare', () => inspect(relative)), button('Delete archive', () => confirmDelete(relative))); item.append(actions);
@@ -206,8 +226,8 @@ async function loadHistory() {
   const records = await api('history'), target = $('#history-list'); target.replaceChildren();
   if (!records.length) target.append(el('p', 'No operations yet.'));
   for (const record of records) {
-    const card = el('div', undefined, 'card'); card.append(el('p', `${date(record.createdAt)} · ${record.type === 'create' ? 'Create' : 'Delete'} · ${record.path} · ${record.status}`));
-    if (record.status === 'done') card.append(button(record.type === 'create' ? 'Undo batch' : 'Restore', async () => { await api('undo', { id: record.id }); notify('Operation undone.'); await loadHistory(); }));
+    const card = el('div', undefined, 'card'); card.append(el('p', `${date(record.createdAt)} · ${record.type === 'import' ? 'Import' : record.type === 'create' ? 'Create' : 'Delete'} · ${record.path} · ${record.status}`));
+    if (record.status === 'done') card.append(button(record.type === 'import' ? 'Undo import' : record.type === 'create' ? 'Undo batch' : 'Restore', async () => { await api('undo', { id: record.id }); notify('Operation undone.'); await loadHistory(); }));
     target.append(card);
   }
 }
@@ -238,5 +258,65 @@ const loaders = { archives: loadBatches, history: loadHistory, logs: loadLogs };
 for (const tab of document.querySelectorAll('[data-tab]')) tab.addEventListener('click', () => guarded(async () => { showTab(tab.dataset.tab); await loaders[tab.dataset.tab]?.(); }));
 for (const [selector, loader] of [['#refresh-archives', loadBatches], ['#refresh-history', loadHistory], ['#refresh-logs', loadLogs]]) $(selector).addEventListener('click', () => guarded(loader));
 $('#close-inspector').addEventListener('click', () => $('#inspector').close());
+let pendingImport = null, uploading = false;
+function importStatus(text) { $('#import-status').textContent = text; $('#import-status').hidden = !text; }
+$('#open-import').addEventListener('click', () => { $('#import-dialog').showModal(); });
+$('#import-kind').addEventListener('change', () => {
+  $('#folder-input').hidden = $('#import-kind').value !== 'folder';
+  $('#archive-input').hidden = $('#import-kind').value !== 'archive';
+});
+for (const selector of ['#import-folder', '#import-archive']) $(selector).addEventListener('change', event => {
+  const file = event.target.files[0];
+  if (file && !$('#import-name').value) $('#import-name').value = (file.webkitRelativePath?.split('/')[0] || file.name.replace(/\.(?:tar\.(?:gz|bz2|xz)|zip|tar|tgz|gz|bz2|xz|tbz|txz)$/i, '')).replace(/[^A-Za-z0-9_. -]/g, '-').replace(/^[^A-Za-z0-9]+/, '').slice(0, 100);
+});
+$('#import-form').addEventListener('submit', event => {
+  event.preventDefault();
+  guarded(async () => {
+    if (uploading) return;
+    const kind = $('#import-kind').value;
+    const files = [...$(kind === 'folder' ? '#import-folder' : '#import-archive').files];
+    if (!files.length) { importStatus('Choose files first.'); return; }
+    uploading = true; $('#review-import').disabled = true; $('#cancel-import').disabled = true;
+    try {
+      pendingImport = (await api('import/start', { kind, category: $('#import-category').value, name: $('#import-name').value.trim() })).token;
+      for (const [index, file] of files.entries()) {
+        importStatus(`Uploading ${index + 1}/${files.length}…`);
+        const relative = kind === 'folder' ? file.webkitRelativePath.split('/').slice(1).join('/') : file.name;
+        const response = await fetch(`/api/import/upload?token=${encodeURIComponent(pendingImport)}&path=${encodeURIComponent(relative)}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-CTF-Request': '1' }, body: file });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Upload failed.');
+      }
+      importStatus('Review files.');
+      const review = await api('import/review', { token: pendingImport });
+      const target = $('#import-review'); target.replaceChildren(el('h3', review.target), tree(review.files));
+      if (review.issues.length) {
+        const details = el('details'); details.append(el('summary', 'Validation details'), issueList(review.issues)); target.append(details);
+      }
+      $('#import-form').hidden = true; target.hidden = false; $('#confirm-import').hidden = false;
+    } catch (error) {
+      importStatus(error.message);
+      if (pendingImport) { try { await api('import/cancel', { token: pendingImport }); pendingImport = null; } catch {} }
+    } finally { uploading = false; $('#review-import').disabled = false; $('#cancel-import').disabled = false; }
+  });
+});
+async function closeImport() {
+  if (uploading) return;
+  if (pendingImport) await api('import/cancel', { token: pendingImport });
+  pendingImport = null;
+  $('#import-form').reset(); $('#import-form').hidden = false; $('#import-review').hidden = true; $('#confirm-import').hidden = true;
+  $('#folder-input').hidden = false; $('#archive-input').hidden = true;
+  importStatus(''); $('#import-dialog').close();
+}
+$('#cancel-import').addEventListener('click', () => guarded(closeImport));
+$('#import-dialog').addEventListener('cancel', event => { event.preventDefault(); guarded(closeImport); });
+$('#confirm-import').addEventListener('click', () => guarded(async () => {
+  if (!pendingImport) return;
+  $('#confirm-import').disabled = true;
+  try {
+    await api('import/confirm', { token: pendingImport }); pendingImport = null;
+    await closeImport(); await loadChallenges(); notify('Challenge imported.');
+  } catch (error) { importStatus(error.message); }
+  finally { $('#confirm-import').disabled = false; }
+}));
 async function start() { await api('session'); $('#login').hidden = true; $('#workspace').hidden = false; $('#logout').hidden = false; await loadChallenges(); }
 await guarded(start);

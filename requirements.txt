@@ -1,0 +1,9 @@
+# Host packages for install.sh (Debian/Ubuntu apt manifest, not pip).
+# Alternatives are separated by |. Existing Docker installations are reused.
+bash
+coreutils
+ca-certificates
+docker.io
+docker-compose-plugin|docker-compose-v2|docker-compose
+# Docker installs Node.js 22, Python 3, GNU tar and coreutils inside the image.
+# No third-party npm or pip packages are required.

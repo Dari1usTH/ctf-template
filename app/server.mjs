@@ -6,12 +6,15 @@ import { fileURLToPath } from 'node:url';
 import { pipeline } from 'node:stream/promises';
 import { AppError, exists, safePath, scan } from './core.mjs';
 import { Workspace } from './workspace.mjs';
+import { Imports } from './imports.mjs';
 
 process.umask(0o022);
 export async function createApplication(options = {}) {
   const root = path.resolve(options.root || process.env.CTF_WORKSPACE || process.cwd());
   const workspace = new Workspace(root, { timezone: options.timezone || process.env.TZ || 'Europe/Bucharest' });
   await workspace.init();
+  const imports = new Imports(workspace);
+  await imports.init();
   let token = options.token || process.env.CTF_ACCESS_TOKEN;
   const tokenFile = path.join(workspace.state, 'access-token');
   if (!token) {
@@ -51,7 +54,7 @@ export async function createApplication(options = {}) {
       if (!['GET', 'POST'].includes(req.method)) throw new AppError('Method not allowed.', 405);
       if (req.method === 'POST') {
         if (req.headers.origin && req.headers.origin !== `http://${req.headers.host}` && req.headers.origin !== `https://${req.headers.host}`) throw new AppError('Origin not allowed.', 403);
-        if (req.headers['x-ctf-request'] !== '1' || !req.headers['content-type']?.startsWith('application/json')) throw new AppError('Invalid request headers.', 403);
+        if (req.headers['x-ctf-request'] !== '1' || !req.headers['content-type']?.startsWith(route === '/api/import/upload' ? 'application/octet-stream' : 'application/json')) throw new AppError('Invalid request headers.', 403);
       }
       if (req.method === 'POST' && route === '/api/login') {
         const ip = req.socket.remoteAddress;
@@ -77,6 +80,13 @@ export async function createApplication(options = {}) {
       if (req.method === 'GET' && route === '/api/challenges') return send(res, 200, await scan(root));
       if (req.method === 'POST' && route === '/api/preview') return send(res, 200, await workspace.preview(await body(req)));
       if (req.method === 'POST' && route === '/api/pack') return send(res, 201, await workspace.pack((await body(req)).token));
+      if (req.method === 'POST' && route === '/api/import/start') return send(res, 201, await imports.create(await body(req)));
+      if (req.method === 'POST' && route === '/api/import/upload') return send(res, 200, await imports.upload(url.searchParams.get('token'), url.searchParams.get('path'), req));
+      if (req.method === 'POST' && route === '/api/import/review') return send(res, 200, await imports.review((await body(req)).token));
+      if (req.method === 'POST' && route === '/api/import/confirm') return send(res, 201, await imports.confirm((await body(req)).token));
+      if (req.method === 'POST' && route === '/api/import/cancel') return send(res, 200, await imports.cancel((await body(req)).token));
+      if (req.method === 'POST' && route === '/api/challenge/delete') return send(res, 200, await workspace.removeChallenge((await body(req)).id));
+      if (req.method === 'POST' && route === '/api/check') return send(res, 200, await workspace.checkBatch((await body(req)).folder));
       if (req.method === 'GET' && route === '/api/batches') return send(res, 200, await workspace.batches());
       if (req.method === 'GET' && route === '/api/inspect') return send(res, 200, await workspace.inspect(url.searchParams.get('path')));
       if (req.method === 'GET' && route === '/api/history') return send(res, 200, (await workspace.operations()).filter(op => op.type !== 'undo'));
@@ -101,7 +111,7 @@ export async function createApplication(options = {}) {
       send(res, status, { error: status === 404 ? 'File or resource not found.' : (error.status ? error.message : 'Internal error. Check docker compose logs.') });
     }
   });
-  server.requestTimeout = 30000;
+  server.requestTimeout = 300000;
   server.headersTimeout = 10000;
   return { server, workspace };
 }

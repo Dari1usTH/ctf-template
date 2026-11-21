@@ -15,7 +15,7 @@
     <div id="workspace" hidden>
       <nav aria-label="Sections"><button data-tab="challenges" aria-pressed="true">Challenges</button><button data-tab="archives" aria-pressed="false">Archives</button><button data-tab="history" aria-pressed="false">History &amp; undo</button><button data-tab="logs" aria-pressed="false">Logs</button></nav>
       <section id="challenges" class="tab">
-        <div class="bar"><h1>Package challenges</h1><button id="rescan">Rescan</button></div>
+        <div class="bar"><h1>Package challenges</h1><button id="open-import">Import</button><button id="rescan">Rescan</button></div>
         <p>Files in <code>public/</code> and <code>private/</code> are selected by default.</p>
         <p id="config-info"></p>
         <div class="bar"><label>Search <input type="search" id="search" placeholder="Name or category"></label><label>Category <select id="category"><option value="">All</option></select></label><button id="select-all">Select results</button><button id="select-none">Clear selection</button></div>
@@ -31,5 +31,18 @@
   </main>
   <dialog id="inspector"><div class="bar"><h2>Inspector &amp; diff</h2><button id="close-inspector">Close</button></div><div id="inspector-body"></div></dialog>
   <dialog id="confirm-dialog"><h2>Move to trash</h2><p id="confirm-text"></p><form method="dialog" class="bar"><button value="cancel">Cancel</button><button value="delete" class="primary">Move to trash</button></form></dialog>
+  <dialog id="import-dialog">
+    <h2>Import challenge</h2>
+    <p id="import-status" role="status" hidden></p>
+    <form id="import-form">
+      <div class="bar"><label>Category <select id="import-category" required></select></label><label>Name <input id="import-name" required maxlength="100" pattern="[A-Za-z0-9][A-Za-z0-9_. \-]*"></label></div>
+      <div class="bar"><label>Source <select id="import-kind"><option value="folder">Folder</option><option value="archive">Archive</option></select></label></div>
+      <p id="folder-input"><input id="import-folder" type="file" webkitdirectory multiple aria-label="Choose folder"></p>
+      <p id="archive-input" hidden><input id="import-archive" type="file" accept=".zip,.tar,.tgz,.gz,.bz2,.xz,.tbz,.txz" aria-label="Choose archive"></p>
+      <button id="review-import" type="submit">Review files</button>
+    </form>
+    <div id="import-review" hidden></div>
+    <div class="bar"><button id="confirm-import" class="primary" hidden>Import</button><button id="cancel-import">Cancel</button></div>
+  </dialog>
 </body>
 </html>

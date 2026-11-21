@@ -1,6 +1,8 @@
 FROM node:22-bookworm-slim
 # Bash, GNU tar and coreutils are already part of this Debian base image.
-RUN bash --version && tar --version && md5sum --version
+RUN apt-get update && apt-get install -y --no-install-recommends python3 \
+    && rm -rf /var/lib/apt/lists/* \
+    && bash --version && tar --version && md5sum --version
 WORKDIR /opt/ctf-author
 COPY package.json ./
 COPY app ./app

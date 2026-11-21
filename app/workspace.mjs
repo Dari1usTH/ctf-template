@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { AppError, id, exists, safePath, relativeName, realDirectory, atomicJSON, inspectFile, makePlan, diffFiles, json, inventory } from './core.mjs';
+import { AppError, id, exists, safePath, relativeName, readConfig, realDirectory, atomicJSON, inspectFile, makePlan, diffFiles, json, inventory } from './core.mjs';
 
 export class Workspace {
   constructor(root, { timezone = 'Europe/Bucharest', scriptTimeout = 120000 } = {}) {
@@ -15,7 +15,7 @@ export class Workspace {
   }
   async init() {
     for (const directory of [this.state, this.output]) await realDirectory(directory);
-    for (const name of ['trash', 'build', 'operations']) await realDirectory(path.join(this.state, name));
+    for (const name of ['trash', 'build', 'operations', 'checks']) await realDirectory(path.join(this.state, name));
     // A crash leaves staging outside Challenges, never a partially published batch.
     await this.recover();
   }
@@ -166,7 +166,9 @@ export class Workspace {
       if (!await exists(path.join(directory, 'manifest.json'))) continue;
       const manifest = JSON.parse(await fs.readFile(await safePath(directory, 'manifest.json'), 'utf8'));
       const files = await inventory(directory);
-      batches.push({ folder: entry.name, createdAt: manifest.createdAt, id: manifest.id, files, archives: manifest.archives.map(a => ({ ...a, files: undefined, missing: !files.some(f => f.path === a.path && f.type === 'file') })) });
+      const checkFile = await safePath(this.state, `checks/${entry.name}.json`, { missing: true });
+      const check = await exists(checkFile) ? JSON.parse(await fs.readFile(checkFile, 'utf8')) : null;
+      batches.push({ check: check?.batchId === manifest.id ? check : null, folder: entry.name, createdAt: manifest.createdAt, id: manifest.id, files, archives: manifest.archives.map(a => ({ ...a, files: undefined, missing: !files.some(f => f.path === a.path && f.type === 'file') })) });
     }
     return batches.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
@@ -199,6 +201,8 @@ export class Workspace {
     const source = await safePath(this.root, from);
     const target = await safePath(this.root, to, { missing: true });
     if (await exists(target)) throw new AppError('Destination already exists. It will not be overwritten.', 409);
+    const identity = await fs.stat(source);
+    op.sourceIdentity = `${identity.dev}:${identity.ino}`;
     await this.saveOperation(op);
     try {
       await this.run(path.join(import.meta.dirname, 'scripts/trash.sh'), [source, target]);
@@ -210,6 +214,44 @@ export class Workspace {
       await this.log({ type: 'error', operation: op.id, message: e.message });
       throw e;
     }
+  }
+  async removeChallenge(challengeId) {
+    return this.exclusive(async () => {
+      relativeName(challengeId);
+      const parts = challengeId.split('/');
+      const config = await readConfig(this.root);
+      if (parts.length !== 2 || !config.categories.includes(parts[0])) throw new AppError('Invalid challenge.');
+      const source = await safePath(this.root, challengeId);
+      if (!(await fs.stat(source)).isDirectory()) throw new AppError('Choose a challenge folder.');
+      const operation = await this.moveOperation('challenge-delete', challengeId, `.ctf-author/trash/${id()}/item`, { path: challengeId });
+      this.previews.clear();
+      return operation;
+    });
+  }
+  async checkBatch(folder) {
+    return this.exclusive(async () => {
+      relativeName(folder);
+      if (folder.includes('/') || !/^\d{4}-\d{2}-\d{2}(?:_|$)/.test(folder)) throw new AppError('Invalid batch.');
+      const directory = await safePath(this.output, folder);
+      const manifest = JSON.parse(await fs.readFile(await safePath(directory, 'manifest.json'), 'utf8'));
+      const archives = [];
+      for (const archive of manifest.archives) {
+        let result;
+        try {
+          const file = await safePath(directory, archive.path);
+          const actual = await inspectFile(file);
+          const ok = actual.md5 === archive.md5 && actual.sha256 === archive.sha256 && actual.size === archive.size;
+          result = { path: archive.path, ok, status: ok ? 'OK' : 'Mismatch' };
+        } catch (error) {
+          result = { path: archive.path, ok: false, status: error.code === 'ENOENT' ? 'Missing' : 'Unreadable' };
+        }
+        archives.push(result);
+      }
+      const report = { folder, batchId: manifest.id, checkedAt: new Date().toISOString(), ok: archives.every(a => a.ok), archives };
+      await atomicJSON(path.join(this.state, 'checks', `${folder}.json`), report);
+      await this.log({ type: 'check', message: `${folder}: ${report.ok ? 'OK' : 'Failed'}` });
+      return report;
+    });
   }
   async remove(relative) {
     return this.exclusive(async () => {
@@ -226,10 +268,14 @@ export class Workspace {
   async undo(operationId) {
     return this.exclusive(async () => {
       const ops = await this.operations();
-      const op = ops.find(o => o.id === operationId && ['create', 'delete'].includes(o.type));
+      const op = ops.find(o => o.id === operationId && ['create', 'delete', 'challenge-delete', 'import'].includes(o.type));
       if (!op || op.status !== 'done') throw new AppError('Operation cannot be undone.', 409);
-      const from = op.to, to = op.type === 'create' ? `.ctf-author/trash/${id()}/item` : op.from;
-      if (op.type === 'delete') {
+      if (op.sourceIdentity) {
+        const current = await fs.stat(await safePath(this.root, op.to));
+        if (`${current.dev}:${current.ino}` !== op.sourceIdentity) throw new AppError('The original item was replaced. Undo is unavailable.', 409);
+      }
+      const from = op.to, to = ['create', 'import'].includes(op.type) ? `.ctf-author/trash/${id()}/item` : op.from;
+      if (['delete', 'challenge-delete'].includes(op.type)) {
         try {
           const parent = await safePath(this.root, path.posix.dirname(to));
           if (!(await fs.stat(parent)).isDirectory()) throw new Error('not a directory');
@@ -237,6 +283,7 @@ export class Workspace {
       }
       const undo = await this.moveOperation('undo', from, to, { undoOf: op.id, path: op.path });
       op.status = 'undone'; op.undoneBy = undo.id; await this.saveOperation(op);
+      this.previews.clear();
       return undo;
     });
   }
