@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>CTF Author</title><link rel="stylesheet" href="/style.css"><script type="module" src="/app.js"></script>
+</head>
+<body>
+  <header><strong>CTF Author</strong><span>Challenge packaging</span><button id="logout" hidden>Sign out</button></header>
+  <main>
+    <p id="notice" role="status" aria-live="polite" hidden></p>
+    <section id="login" hidden>
+      <h1>Sign in</h1><p>Enter the token shown by <code>run.sh</code>.</p>
+      <form id="login-form"><label>Access token <input name="token" type="password" autocomplete="current-password" required minlength="16"></label><button type="submit">Sign in</button></form>
+    </section>
+    <div id="workspace" hidden>
+      <nav aria-label="Sections"><button data-tab="challenges" aria-pressed="true">Challenges</button><button data-tab="archives" aria-pressed="false">Archives</button><button data-tab="history" aria-pressed="false">History &amp; undo</button><button data-tab="logs" aria-pressed="false">Logs</button></nav>
+      <section id="challenges" class="tab">
+        <div class="bar"><h1>Package challenges</h1><button id="rescan">Rescan</button></div>
+        <p>Files in <code>public/</code> and <code>private/</code> are selected by default.</p>
+        <p id="config-info"></p>
+        <div class="bar"><label>Search <input type="search" id="search" placeholder="Name or category"></label><label>Category <select id="category"><option value="">All</option></select></label><button id="select-all">Select results</button><button id="select-none">Clear selection</button></div>
+        <p id="selection-summary" aria-live="polite"></p>
+        <div id="challenge-list"></div>
+        <button id="preview" class="primary">Review package</button>
+        <section id="plan" hidden aria-label="Preview"></section>
+      </section>
+      <section id="archives" class="tab" hidden><div class="bar"><h1>Archives</h1><button id="refresh-archives">Refresh</button></div><p>Deleted items can be restored from History.</p><div id="batch-list"></div></section>
+      <section id="history" class="tab" hidden><div class="bar"><h1>History &amp; undo</h1><button id="refresh-history">Refresh</button></div><p>Undo is available after restart.</p><div id="history-list"></div></section>
+      <section id="logs" class="tab" hidden><div class="bar"><h1>Logs</h1><button id="refresh-logs">Refresh</button></div><p>Latest 300 events.</p><div id="log-list"></div></section>
+    </div>
+  </main>
+  <dialog id="inspector"><div class="bar"><h2>Inspector &amp; diff</h2><button id="close-inspector">Close</button></div><div id="inspector-body"></div></dialog>
+  <dialog id="confirm-dialog"><h2>Move to trash</h2><p id="confirm-text"></p><form method="dialog" class="bar"><button value="cancel">Cancel</button><button value="delete" class="primary">Move to trash</button></form></dialog>
+</body>
+</html>

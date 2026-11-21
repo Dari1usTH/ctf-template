@@ -21,3 +21,9 @@ TAGS
 peda-session-*.txt
 .gdb_history
 core
+
+# CTF Author generated state and packages
+.ctf-author/
+Challenges/
+node_modules/
+coverage/
